@@ -38,9 +38,9 @@ function sim_output = run_filters(varargin)
     isStringy = @(s) (ischar(s) || (isstring(s) && isscalar(s)));
     isLabelCell = @(c) iscell(c) && numel(c) == 2 && all(cellfun(isStringy, c));
 
-    addParameter(parser, 'output_dir', pwd, isStringy);
-    addParameter(parser, 'posterior_root', '', isStringy);
-    addParameter(parser, 'results_file', 'filter_results.mat', isStringy);
+    addParameter(parser, 'output_dir', pwd, isStringy); % sure directory name is string string
+    addParameter(parser, 'posterior_root', '', isStringy);% "  "
+    addParameter(parser, 'results_file', 'filter_results.mat', isStringy);% sure filename is a string
     addParameter(parser, 'method_labels', {'MethodA', 'MethodB'}, isLabelCell);
     addParameter(parser, 'overwrite_output', true, @(x) islogical(x) && isscalar(x));
     addParameter(parser, 'save_particle_snapshots', false, @(x) islogical(x) && isscalar(x));
@@ -116,7 +116,8 @@ function sim_output = run_filters(varargin)
 
     %% Model dimensions and observation pattern
     Dx = 10;
-    N =1000*(2^10);  
+    %N =(2^10);
+    N=1000;
     Dz = fix(3*Dx/5);          % number of observed components
     fixed_observed_components = randsample(Dx, Dz);
     fixed_observed_components = sort(fixed_observed_components);
@@ -146,7 +147,7 @@ function sim_output = run_filters(varargin)
 
     barrier_params_A = barrier_params;
     barrier_params_B = barrier_params;
-    barrier_params_B.p = 1.5 * r_obs;
+    barrier_params_B.p = 0.5 * r_obs;
 
     %% Run filters
     num_obs = size(ze_sparse, 2);
@@ -155,14 +156,14 @@ function sim_output = run_filters(varargin)
     partitions = cell(1, num_obs);
     for obs_idx = 1:num_obs
         cent = x(:, (n_obs) * obs_idx + 1);
-        partitions{obs_idx} = hypercube_partition_full(cent, r, r_sub);
+        partitions{obs_idx} = hypercube_partition_full(cent, r, r_sub);% holds all info related to geometry of hypercubes
     end
 
-    measurement_data_A = initialize_measurement_storage(num_obs);
+    measurement_data_A = initialize_measurement_storage(num_obs);% insidemass,insidecount,subcubemass,totalmass
     measurement_data_B = initialize_measurement_storage(num_obs);
     measurement_data_opt = initialize_measurement_storage(num_obs);
 
-    record_A = @(obs_idx, particles, weights) record_measurement(obs_idx, particles, weights, 1);
+    record_A = @(obs_idx, particles, weights) record_measurement(obs_idx, particles, weights, 1); % called by filters, it saves insidemass,insidecount,subcubemass,totalmass to measurement_dataA
     record_B = @(obs_idx, particles, weights) record_measurement(obs_idx, particles, weights, 2);
     record_opt = @(obs_idx, particles, weights) record_measurement(obs_idx, particles, weights, 3);
 
@@ -174,7 +175,7 @@ function sim_output = run_filters(varargin)
         'output_dir', posterior_root, 'measurement_handler', record_B, 'store_histories', false);
     [Xf_B] = sir_barrier(F, sx, sz, he, NTe, n_obs, ze_sparse, H, X0B, ness_thr, barrier_params_B, optsB);
 
-    optimal_particle_multiplier = 4;
+    optimal_particle_multiplier = 20;
     N_opt = max(N, ceil(optimal_particle_multiplier * N));
     X0_opt = x0 + sz*randn([Dx N_opt]);
     opts_opt = struct('save_to_disk', save_particle_snapshots, 'method_label', optimal_label, ...

@@ -1,10 +1,9 @@
 function stats = run_multiple_simulations(varargin)
-%RUN_MULTIPLE_SIMULATIONS Run multiple filter experiments and aggregate metrics.
+%RUN_MULTIPLE_SIMULATIONS Run multiple filter experiments and aggregate TV distances.
 %   RUN_MULTIPLE_SIMULATIONS(Name,Value,...) executes NUM_RUNS independent
 %   simulations of the filtering workflow. Each simulation produces its own
-%   output directory before posterior TV distances and normalized filtered
-%   MSE curves are computed against the optimal SIR filter. The results are
-%   averaged and plotted. Optional name/value pairs:
+%   output directory before the posterior TV distances are computed. The
+%   results are averaged and plotted. Optional name/value pairs:
 %
 %       'num_runs'        Number of simulations to execute (default 5).
 %       'parallel_mode'   Execution mode: 'serial', 'parfor' or 'auto'
@@ -81,11 +80,7 @@ function stats = run_multiple_simulations(varargin)
 
     obs_indices = run_results{1}.obs_indices;
     num_obs = numel(obs_indices);
-    tv_AB_runs = zeros(num_runs, num_obs);
-    tv_A_opt_runs = zeros(num_runs, num_obs);
-    tv_B_opt_runs = zeros(num_runs, num_obs);
-    mse_A_runs = zeros(num_runs, num_obs);
-    mse_B_runs = zeros(num_runs, num_obs);
+    tv_inside_runs = zeros(num_runs, num_obs);
 
     for run_idx = 1:num_runs
         current = run_results{run_idx};
@@ -93,100 +88,48 @@ function stats = run_multiple_simulations(varargin)
             error('Observation count changed between runs (%d vs %d).', ...
                 numel(current.obs_indices), num_obs);
         end
-        tv_AB_runs(run_idx, :) = current.tv_summary.inside_AB(:).';
-        tv_A_opt_runs(run_idx, :) = current.tv_summary.inside_A_vs_optimal(:).';
-        tv_B_opt_runs(run_idx, :) = current.tv_summary.inside_B_vs_optimal(:).';
-        mse_A_runs(run_idx, :) = current.mse_summary.methodA(:).';
-        mse_B_runs(run_idx, :) = current.mse_summary.methodB(:).';
+        tv_inside_runs(run_idx, :) = current.tv_inside(:).';
     end
 
-    mean_tv_AB = mean(tv_AB_runs, 1);
-    mean_tv_A_opt = mean(tv_A_opt_runs, 1);
-    mean_tv_B_opt = mean(tv_B_opt_runs, 1);
-    mean_mse_A = mean(mse_A_runs, 1);
-    mean_mse_B = mean(mse_B_runs, 1);
+    mean_inside = mean(tv_inside_runs, 1);
 
-    fig_runs_ab = figure('Name', 'Posterior TV distance trajectories (Method A vs B)');
+    fig_runs = figure('Name', 'Posterior TV distance trajectories (inside-only)');
     hold on;
     colors = lines(num_runs);
     for run_idx = 1:num_runs
-        plot(obs_indices, tv_AB_runs(run_idx, :), 'Color', colors(run_idx, :), ...
+        plot(obs_indices, tv_inside_runs(run_idx, :), 'Color', colors(run_idx, :), ...
             'LineWidth', 1.0, 'DisplayName', sprintf('Run %d', run_idx));
     end
     hold off;
     xlabel('Observation index');
-    ylabel('TV distance (A vs B)');
-    title('TV distances between Method A and Method B across simulations');
+    ylabel('TV distance (inside-only)');
+    title('Inside-only TV distance trajectories across simulations');
     legend('Location', 'best');
     grid on;
 
-    fig_runs_opt = figure('Name', 'Posterior TV distance trajectories vs optimal');
+    fig_mean = figure('Name', 'Average posterior TV distances (inside-only)');
     hold on;
-    for run_idx = 1:num_runs
-        plot(obs_indices, tv_A_opt_runs(run_idx, :), '--', 'Color', colors(run_idx, :), ...
-            'LineWidth', 1.0, 'DisplayName', sprintf('Run %d (A vs optimal)', run_idx));
-        plot(obs_indices, tv_B_opt_runs(run_idx, :), '-', 'Color', colors(run_idx, :)*0.7, ...
-            'LineWidth', 1.0, 'DisplayName', sprintf('Run %d (B vs optimal)', run_idx));
-    end
+    plot(obs_indices, mean_inside, '-o', 'LineWidth', 1.5, 'MarkerSize', 6, ...
+        'DisplayName', 'Inside-only mean');
     hold off;
     xlabel('Observation index');
-    ylabel('TV distance vs optimal');
-    title('TV distances between SIR optimal filter and barrier methods');
-    legend('Location', 'bestoutside');
-    grid on;
-
-    fig_mean_tv = figure('Name', 'Average posterior TV distances');
-    hold on;
-    plot(obs_indices, mean_tv_AB, '-o', 'LineWidth', 1.5, 'MarkerSize', 6, ...
-        'DisplayName', 'Method A vs Method B');
-    plot(obs_indices, mean_tv_A_opt, '--s', 'LineWidth', 1.5, 'MarkerSize', 6, ...
-        'DisplayName', 'Method A vs optimal');
-    plot(obs_indices, mean_tv_B_opt, '-.^', 'LineWidth', 1.5, 'MarkerSize', 6, ...
-        'DisplayName', 'Method B vs optimal');
-    hold off;
-    xlabel('Observation index');
-    ylabel('TV distance');
-    title('Average posterior TV distances across simulations');
-    legend('Location', 'best');
-    grid on;
-
-    fig_mean_mse = figure('Name', 'Average normalized filtered MSE');
-    hold on;
-    plot(obs_indices, mean_mse_A, '-o', 'LineWidth', 1.5, 'MarkerSize', 6, ...
-        'DisplayName', 'Method A');
-    plot(obs_indices, mean_mse_B, '-s', 'LineWidth', 1.5, 'MarkerSize', 6, ...
-        'DisplayName', 'Method B');
-    hold off;
-    xlabel('Observation index');
-    ylabel('Normalized MSE');
-    title('Average normalized filtered MSE vs optimal filter');
+    ylabel('TV distance (inside-only)');
+    title('Average inside-only TV distances across simulations');
     legend('Location', 'best');
     grid on;
 
     stats_file = fullfile(base_output_dir, 'tv_distance_statistics.mat');
-    save(stats_file, 'obs_indices', 'tv_AB_runs', 'tv_A_opt_runs', 'tv_B_opt_runs', ...
-        'mean_tv_AB', 'mean_tv_A_opt', 'mean_tv_B_opt', 'mse_A_runs', 'mse_B_runs', ...
-        'mean_mse_A', 'mean_mse_B');
-    fprintf('Saved aggregated statistics to %s\n', stats_file);
+    save(stats_file, 'obs_indices', 'tv_inside_runs', 'mean_inside');
+    fprintf('Saved aggregated TV distance statistics to %s\n', stats_file);
 
-    saveas(fig_runs_ab, fullfile(base_output_dir, 'tv_distance_runs_AB.fig'));
-    saveas(fig_runs_opt, fullfile(base_output_dir, 'tv_distance_runs_vs_optimal.fig'));
-    saveas(fig_mean_tv, fullfile(base_output_dir, 'tv_distance_average.fig'));
-    saveas(fig_mean_mse, fullfile(base_output_dir, 'filtered_mse_average.fig'));
+    saveas(fig_runs, fullfile(base_output_dir, 'tv_distance_runs.fig'));
+    saveas(fig_mean, fullfile(base_output_dir, 'tv_distance_average.fig'));
 
     if nargout > 0
         stats = struct(...
             'obs_indices', obs_indices,...
-            'tv_AB_runs', tv_AB_runs,...
-            'tv_A_opt_runs', tv_A_opt_runs,...
-            'tv_B_opt_runs', tv_B_opt_runs,...
-            'mse_A_runs', mse_A_runs,...
-            'mse_B_runs', mse_B_runs,...
-            'mean_tv_AB', mean_tv_AB,...
-            'mean_tv_A_opt', mean_tv_A_opt,...
-            'mean_tv_B_opt', mean_tv_B_opt,...
-            'mean_mse_A', mean_mse_A,...
-            'mean_mse_B', mean_mse_B,...
+            'tv_inside_runs', tv_inside_runs,...
+            'mean_inside', mean_inside,...
             'base_output_dir', base_output_dir,...
             'run_dirs', {run_dirs});
     end
@@ -207,10 +150,10 @@ function run_result = execute_single_run(run_idx, run_dir)
     sim_output = run_filters('output_dir', run_dir, 'results_file', results_file, ...
         'posterior_root', posterior_root, 'overwrite_output', true);
 
-    tv_summary = sim_output.tv_summary;
-    mse_summary = sim_output.mse_summary;
+    [obs_indices, tv_inside] = compute_posterior_tv_distances( ...
+        sim_output.results_file, sim_output.posterior_root, ...
+        'method_labels', sim_output.method_labels);
 
     run_result = struct('run_idx', run_idx, 'run_dir', run_dir, ...
-        'obs_indices', tv_summary.obs_indices, 'tv_summary', tv_summary, ...
-        'mse_summary', mse_summary);
+        'obs_indices', obs_indices, 'tv_inside', tv_inside);
 end
