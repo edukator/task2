@@ -209,9 +209,18 @@ function sim_output = run_filters(varargin)
     end
     mse_A = sum((Xf_A(:, 2:end) - Xopt_filtered).^2, 1) ./ Pd_f;
     mse_B = sum((Xf_B(:, 2:end) - Xopt_filtered).^2, 1) ./ Pd_f;
+
+    x_truth_coarse = x(1:Dx, (n_obs+1):n_obs:NTe+1);
+    PDF_signal = mean(sum(x_truth_coarse.^2, 1));
+    if PDF_signal <= eps
+        PDF_signal = 1;
+    end
+    mse_signal_A = sum((Xf_A(:, 2:end) - x_truth_coarse).^2, 1) ./ PDF_signal;
+    mse_signal_B = sum((Xf_B(:, 2:end) - x_truth_coarse).^2, 1) ./ PDF_signal;
     mse_summary = struct('obs_indices', obs_indices, ...
         'methodA', mse_A, 'methodB', mse_B, 'optimal_label', optimal_label, ...
-        'normalization', Pd_f);
+        'normalization', Pd_f, 'PDF_signal', PDF_signal, ...
+        'MSE_signal_A', mse_signal_A, 'MSE_signal_B', mse_signal_B);
 
     method_summaries = repmat(struct('label', '', 'inside_mass', [], ...
         'inside_count', []), 3, 1);
@@ -251,7 +260,7 @@ function sim_output = run_filters(varargin)
         'optimal_label', optimal_label);
 
     results.truth = struct( ...
-        'x_coarse', x(1:Dx, (n_obs+1):n_obs:NTe+1), ...
+        'x_coarse', x_truth_coarse, ...
         'x0', x0);
 
     results.tv_summary = tv_summary;

@@ -44,6 +44,8 @@ function stats = replot_from_filter_results(base_output_dir)
     tv_B_opt_runs = [];
     mse_A_runs = [];
     mse_B_runs = [];
+    mse_signal_A_runs = [];
+    mse_signal_B_runs = [];
     obs_indices = [];
 
     for run_idx = 1:num_runs
@@ -73,7 +75,7 @@ function stats = replot_from_filter_results(base_output_dir)
             end
         end
 
-        required_mse_fields = {'methodA', 'methodB'};
+        required_mse_fields = {'methodA', 'methodB', 'MSE_signal_A', 'MSE_signal_B'};
         for k = 1:numel(required_mse_fields)
             if ~isfield(mse_summary, required_mse_fields{k})
                 error('mse_summary.%s missing from %s.', required_mse_fields{k}, results_file);
@@ -90,6 +92,8 @@ function stats = replot_from_filter_results(base_output_dir)
             tv_B_opt_runs = zeros(num_runs, num_obs);
             mse_A_runs = zeros(num_runs, num_obs);
             mse_B_runs = zeros(num_runs, num_obs);
+            mse_signal_A_runs = zeros(num_runs, num_obs);
+            mse_signal_B_runs = zeros(num_runs, num_obs);
         else
             if numel(current_indices) ~= numel(obs_indices) || any(current_indices ~= obs_indices)
                 error('Observation indices mismatch in %s.', results_file);
@@ -102,6 +106,8 @@ function stats = replot_from_filter_results(base_output_dir)
 
         mse_A_runs(run_idx, :) = mse_summary.methodA(:).';
         mse_B_runs(run_idx, :) = mse_summary.methodB(:).';
+        mse_signal_A_runs(run_idx, :) = mse_summary.MSE_signal_A(:).';
+        mse_signal_B_runs(run_idx, :) = mse_summary.MSE_signal_B(:).';
     end
 
     mean_tv_AB = mean(tv_AB_runs, 1);
@@ -109,6 +115,8 @@ function stats = replot_from_filter_results(base_output_dir)
     mean_tv_B_opt = mean(tv_B_opt_runs, 1);
     mean_mse_A = mean(mse_A_runs, 1);
     mean_mse_B = mean(mse_B_runs, 1);
+    mean_mse_signal_A = mean(mse_signal_A_runs, 1);
+    mean_mse_signal_B = mean(mse_signal_B_runs, 1);
 
     colors = lines(num_runs);
 
@@ -168,16 +176,31 @@ function stats = replot_from_filter_results(base_output_dir)
     legend('Location', 'best');
     grid on;
 
+    fig_mean_signal_mse = figure('Name', 'Average signal-referenced MSE');
+    hold on;
+    plot(obs_indices, mean_mse_signal_A, '-o', 'LineWidth', 1.5, 'MarkerSize', 6, ...
+        'DisplayName', 'Method A vs signal');
+    plot(obs_indices, mean_mse_signal_B, '-s', 'LineWidth', 1.5, 'MarkerSize', 6, ...
+        'DisplayName', 'Method B vs signal');
+    hold off;
+    xlabel('Observation index');
+    ylabel('Normalized MSE');
+    title('Average signal-referenced MSE across simulations');
+    legend('Location', 'best');
+    grid on;
+
     stats_file = fullfile(base_output_dir, 'tv_distance_statistics.mat');
     save(stats_file, 'obs_indices', 'tv_AB_runs', 'tv_A_opt_runs', 'tv_B_opt_runs', ...
         'mean_tv_AB', 'mean_tv_A_opt', 'mean_tv_B_opt', 'mse_A_runs', 'mse_B_runs', ...
-        'mean_mse_A', 'mean_mse_B');
+        'mse_signal_A_runs', 'mse_signal_B_runs', 'mean_mse_A', 'mean_mse_B', ...
+        'mean_mse_signal_A', 'mean_mse_signal_B');
     fprintf('Saved aggregated statistics to %s\n', stats_file);
 
     saveas(fig_runs_ab, fullfile(base_output_dir, 'tv_distance_runs_AB.fig'));
     saveas(fig_runs_opt, fullfile(base_output_dir, 'tv_distance_runs_vs_optimal.fig'));
     saveas(fig_mean_tv, fullfile(base_output_dir, 'tv_distance_average.fig'));
     saveas(fig_mean_mse, fullfile(base_output_dir, 'filtered_mse_average.fig'));
+    saveas(fig_mean_signal_mse, fullfile(base_output_dir, 'signal_mse_average.fig'));
 
     if nargout > 0
         stats = struct(...
@@ -187,11 +210,15 @@ function stats = replot_from_filter_results(base_output_dir)
             'tv_B_opt_runs', tv_B_opt_runs,...
             'mse_A_runs', mse_A_runs,...
             'mse_B_runs', mse_B_runs,...
+            'mse_signal_A_runs', mse_signal_A_runs,...
+            'mse_signal_B_runs', mse_signal_B_runs,...
             'mean_tv_AB', mean_tv_AB,...
             'mean_tv_A_opt', mean_tv_A_opt,...
             'mean_tv_B_opt', mean_tv_B_opt,...
             'mean_mse_A', mean_mse_A,...
             'mean_mse_B', mean_mse_B,...
+            'mean_mse_signal_A', mean_mse_signal_A,...
+            'mean_mse_signal_B', mean_mse_signal_B,...
             'base_output_dir', base_output_dir,...
             'run_dirs', {fullfile(base_output_dir, {run_listing.name})});
     end
