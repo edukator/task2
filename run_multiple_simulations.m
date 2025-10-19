@@ -93,37 +93,9 @@ function stats = run_multiple_simulations(varargin)
 
     mean_inside = mean(tv_inside_runs, 1);
 
-    fig_runs = figure('Name', 'Posterior TV distance trajectories (inside-only)');
-    hold on;
-    colors = lines(num_runs);
-    for run_idx = 1:num_runs
-        plot(obs_indices, tv_inside_runs(run_idx, :), 'Color', colors(run_idx, :), ...
-            'LineWidth', 1.0, 'DisplayName', sprintf('Run %d', run_idx));
-    end
-    hold off;
-    xlabel('Observation index');
-    ylabel('TV distance (inside-only)');
-    title('Inside-only TV distance trajectories across simulations');
-    legend('Location', 'best');
-    grid on;
-
-    fig_mean = figure('Name', 'Average posterior TV distances (inside-only)');
-    hold on;
-    plot(obs_indices, mean_inside, '-o', 'LineWidth', 1.5, 'MarkerSize', 6, ...
-        'DisplayName', 'Inside-only mean');
-    hold off;
-    xlabel('Observation index');
-    ylabel('TV distance (inside-only)');
-    title('Average inside-only TV distances across simulations');
-    legend('Location', 'best');
-    grid on;
-
     stats_file = fullfile(base_output_dir, 'tv_distance_statistics.mat');
     save(stats_file, 'obs_indices', 'tv_inside_runs', 'mean_inside');
     fprintf('Saved aggregated TV distance statistics to %s\n', stats_file);
-
-    saveas(fig_runs, fullfile(base_output_dir, 'tv_distance_runs.fig'));
-    saveas(fig_mean, fullfile(base_output_dir, 'tv_distance_average.fig'));
 
     if nargout > 0
         stats = struct(...
@@ -145,14 +117,14 @@ function run_result = execute_single_run(run_idx, run_dir)
     end
 
     results_file = fullfile(run_dir, 'filter_results.mat');
-    posterior_root = fullfile(run_dir, 'posterior_data');
+    sim_output = run_filters('output_dir', run_dir, 'results_file', results_file);
 
-    sim_output = run_filters('output_dir', run_dir, 'results_file', results_file, ...
-        'posterior_root', posterior_root, 'overwrite_output', true);
-
-    [obs_indices, tv_inside] = compute_posterior_tv_distances( ...
-        sim_output.results_file, sim_output.posterior_root, ...
-        'method_labels', sim_output.method_labels);
+    obs_indices = sim_output.tv_summary.obs_indices;
+    vs_optimal_distances = sim_output.tv_summary.vs_optimal_distances;
+    if isempty(vs_optimal_distances)
+        error('tv_summary.vs_optimal_distances is empty for run %d.', run_idx);
+    end
+    tv_inside = vs_optimal_distances(1, :);
 
     run_result = struct('run_idx', run_idx, 'run_dir', run_dir, ...
         'obs_indices', obs_indices, 'tv_inside', tv_inside);

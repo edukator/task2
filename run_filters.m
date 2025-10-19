@@ -2,28 +2,17 @@ function sim_output = run_filters(varargin)
 %RUN_FILTERS Run the filtering experiment and record posterior statistics.
 %   SIM_OUTPUT = RUN_FILTERS(Name,Value,...) executes one instance of the
 %   filtering experiment, saving the signal, observations and posterior
-%   summary statistics to disk. Particle ensembles may optionally be stored
-%   for each observation, but by default only the information required to
-%   plot total-variation distances is kept. In addition to the two barrier
-%   methods, an optimal SIR particle filter with a significantly larger
-%   ensemble is executed to provide reference posterior mass distributions
-%   and normalized filtered-state MSE curves.
+%   summary statistics to disk. In addition to the four barrier methods, an
+%   optimal SIR particle filter with a significantly larger ensemble is
+%   executed to provide reference posterior mass distributions and
+%   normalized filtered-state MSE curves.
 %
 %   Name/value pairs:
-%       'output_dir'       Base directory for result files (default pwd).
-%       'posterior_root'   Directory for posterior data (default
-%                          fullfile(output_dir,'posterior_data')).
-%       'results_file'     MAT file used to store summary results (default
-%                          'filter_results.mat' inside output_dir).
-%       'method_labels'    1x2 cell array with labels for the two filters
-%                          (default {'MethodA','MethodB'}).
-%       'overwrite_output' Logical flag indicating whether an existing
-%                          posterior directory should be cleared before the
-%                          simulation (default true).
-%       'save_particle_snapshots'
-%                         Logical flag controlling whether individual
-%                         posterior ensembles are saved to disk (default
-%                         false).
+%       'output_dir'     Base directory for result files (default pwd).
+%       'results_file'   MAT file used to store summary results (default
+%                        'filter_results.mat' inside output_dir).
+%       'method_labels'  1x4 cell array with labels for the barrier
+%                        filters (default {'MethodA','MethodB','MethodC','MethodD'}).
 %
 %   Example
 %       run_filters;                 % run with defaults
@@ -36,14 +25,11 @@ function sim_output = run_filters(varargin)
     parser.FunctionName = mfilename;
 
     isStringy = @(s) (ischar(s) || (isstring(s) && isscalar(s)));
-    isLabelCell = @(c) iscell(c) && numel(c) == 2 && all(cellfun(isStringy, c));
+    isLabelCell = @(c) iscell(c) && numel(c) == 4 && all(cellfun(isStringy, c));
 
     addParameter(parser, 'output_dir', pwd, isStringy); % sure directory name is string string
-    addParameter(parser, 'posterior_root', '', isStringy);% "  "
     addParameter(parser, 'results_file', 'filter_results.mat', isStringy);% sure filename is a string
-    addParameter(parser, 'method_labels', {'MethodA', 'MethodB'}, isLabelCell);
-    addParameter(parser, 'overwrite_output', true, @(x) islogical(x) && isscalar(x));
-    addParameter(parser, 'save_particle_snapshots', false, @(x) islogical(x) && isscalar(x));
+    addParameter(parser, 'method_labels', {'MethodA', 'MethodB', 'MethodC', 'MethodD'}, isLabelCell);
 
     parse(parser, varargin{:});
     opts = parser.Results;
@@ -51,25 +37,6 @@ function sim_output = run_filters(varargin)
     output_dir = char(opts.output_dir);
     if ~isfolder(output_dir)
         mkdir(output_dir);
-    end
-
-    save_particle_snapshots = logical(opts.save_particle_snapshots);
-
-    if save_particle_snapshots
-        if isempty(opts.posterior_root)
-            posterior_root = fullfile(output_dir, 'posterior_data');
-        else
-            posterior_root = char(opts.posterior_root);
-        end
-
-        if opts.overwrite_output && isfolder(posterior_root)
-            rmdir(posterior_root, 's');
-        end
-        if ~isfolder(posterior_root)
-            mkdir(posterior_root);
-        end
-    else
-        posterior_root = '';
     end
 
     results_file = char(opts.results_file);
@@ -82,6 +49,10 @@ function sim_output = run_filters(varargin)
     end
 
     method_labels = cellfun(@char, opts.method_labels, 'UniformOutput', false);
+    num_methods = 4;
+    if numel(method_labels) ~= num_methods
+        error('method_labels must contain exactly %d entries.', num_methods);
+    end
 
     %% Parameters
     F = 8;                  % forcing parameter
@@ -142,12 +113,19 @@ function sim_output = run_filters(varargin)
 
     %% Initialize particle ensembles
     shared_initial = x0 + sz*randn([Dx N]);
-    X0A = shared_initial;
-    X0B = shared_initial;
 
     barrier_params_A = barrier_params;
     barrier_params_B = barrier_params;
     barrier_params_B.p = 0.5 * r_obs;
+    barrier_params_C = barrier_params;
+    barrier_params_C.p = barrier_params.p / 4;
+    barrier_params_D = barrier_params;
+    barrier_params_D.p = barrier_params.p / 8;
+
+    barrier_params_list = {barrier_params_A, barrier_params_B, ...
+        barrier_params_C, barrier_params_D};
+
+    X0_methods = repmat({shared_initial}, num_methods, 1);
 
     %% Run filters
     num_obs = size(ze_sparse, 2);
@@ -159,71 +137,109 @@ function sim_output = run_filters(varargin)
         partitions{obs_idx} = hypercube_partition_full(cent, r, r_sub);% holds all info related to geometry of hypercubes
     end
 
-    measurement_data_A = initialize_measurement_storage(num_obs);% insidemass,insidecount,subcubemass,totalmass
-    measurement_data_B = initialize_measurement_storage(num_obs);
+    measurement_data_methods = repmat(struct(), num_methods, 1);
+    for method_idx = 1:num_methods
+        measurement_data_methods(method_idx) = initialize_measurement_storage(num_obs);% insidemass,insidecount,subcubemass,totalmass
+    end
     measurement_data_opt = initialize_measurement_storage(num_obs);
 
-    record_A = @(obs_idx, particles, weights) record_measurement(obs_idx, particles, weights, 1); % called by filters, it saves insidemass,insidecount,subcubemass,totalmass to measurement_dataA
-    record_B = @(obs_idx, particles, weights) record_measurement(obs_idx, particles, weights, 2);
-    record_opt = @(obs_idx, particles, weights) record_measurement(obs_idx, particles, weights, 3);
+    record_method = cell(num_methods, 1);
+    for method_idx = 1:num_methods
+        idx = method_idx;
+        record_method{idx} = @(obs_idx, particles, weights) record_measurement(obs_idx, particles, weights, idx); % called by filters, it saves insidemass,insidecount,subcubemass,totalmass
+    end
+    record_opt = @(obs_idx, particles, weights) record_measurement(obs_idx, particles, weights, num_methods + 1);
 
-    optsA = struct('save_to_disk', save_particle_snapshots, 'method_label', method_labels{1}, ...
-        'output_dir', posterior_root, 'measurement_handler', record_A, 'store_histories', false);
-    [Xf_A] = sir_barrier(F, sx, sz, he, NTe, n_obs, ze_sparse, H, X0A, ness_thr, barrier_params_A, optsA);
-
-    optsB = struct('save_to_disk', save_particle_snapshots, 'method_label', method_labels{2}, ...
-        'output_dir', posterior_root, 'measurement_handler', record_B, 'store_histories', false);
-    [Xf_B] = sir_barrier(F, sx, sz, he, NTe, n_obs, ze_sparse, H, X0B, ness_thr, barrier_params_B, optsB);
+    Xf_methods = cell(num_methods, 1);
+    for method_idx = 1:num_methods
+        idx = method_idx;
+        opts_method = struct('measurement_handler', record_method{idx});
+        Xf_methods{idx} = sir_barrier(F, sx, sz, he, NTe, n_obs, ze_sparse, H, X0_methods{idx}, ness_thr, barrier_params_list{idx}, opts_method);
+    end
 
     optimal_particle_multiplier = 20;
     N_opt = max(N, ceil(optimal_particle_multiplier * N));
     X0_opt = x0 + sz*randn([Dx N_opt]);
-    opts_opt = struct('save_to_disk', save_particle_snapshots, 'method_label', optimal_label, ...
-        'output_dir', posterior_root, 'measurement_handler', record_opt, 'store_histories', false);
+    opts_opt = struct('measurement_handler', record_opt);
     [Xf_opt] = sir(F, sx, sz, he, NTe, n_obs, ze_sparse, H, X0_opt, ness_thr, opts_opt);
 
     obs_indices = 1:num_obs;
-    tv_inside_AB = zeros(1, num_obs);
-    tv_inside_A_opt = zeros(1, num_obs);
-    tv_inside_B_opt = zeros(1, num_obs);
+    vs_optimal_distances = zeros(num_methods, num_obs);
+
     for obs_idx = 1:num_obs
-        masses_A = measurement_data_A.inside_total_masses{obs_idx};
-        masses_B = measurement_data_B.inside_total_masses{obs_idx};
         masses_opt = measurement_data_opt.inside_total_masses{obs_idx};
-        tv_inside_AB(obs_idx) = 0.5 * sum(abs(masses_A - masses_B));
-        tv_inside_A_opt(obs_idx) = 0.5 * sum(abs(masses_A - masses_opt));
-        tv_inside_B_opt(obs_idx) = 0.5 * sum(abs(masses_B - masses_opt));
+        method_masses = cell(num_methods, 1);
+        for method_idx = 1:num_methods
+            method_masses{method_idx} = measurement_data_methods(method_idx).inside_total_masses{obs_idx};
+        end
+
+        for method_idx = 1:num_methods
+            vs_optimal_distances(method_idx, obs_idx) = 0.5 * sum(abs(method_masses{method_idx} - masses_opt));
+        end
     end
 
     tv_summary = struct('obs_indices', obs_indices, ...
-        'inside_only', tv_inside_AB, ...
-        'inside_AB', tv_inside_AB, ...
-        'inside_A_vs_optimal', tv_inside_A_opt, ...
-        'inside_B_vs_optimal', tv_inside_B_opt, ...
+        'method_labels', {method_labels}, ...
+        'vs_optimal_distances', vs_optimal_distances, ...
         'optimal_label', optimal_label);
+
+    tv_summary.inside_A_vs_optimal = vs_optimal_distances(1, :);
+    tv_summary.inside_B_vs_optimal = vs_optimal_distances(2, :);
+    tv_summary.inside_C_vs_optimal = vs_optimal_distances(3, :);
+    tv_summary.inside_D_vs_optimal = vs_optimal_distances(4, :);
 
     Xopt_filtered = Xf_opt(:, 2:end);
     Pd_f = mean(sum(Xopt_filtered.^2, 1));
     if Pd_f <= eps
         Pd_f = 1;
     end
-    mse_A = sum((Xf_A(:, 2:end) - Xopt_filtered).^2, 1) ./ Pd_f;
-    mse_B = sum((Xf_B(:, 2:end) - Xopt_filtered).^2, 1) ./ Pd_f;
+
+    mse_vs_opt_methods = zeros(num_methods, num_obs);
+    for method_idx = 1:num_methods
+        mse_vs_opt_methods(method_idx, :) = sum((Xf_methods{method_idx}(:, 2:end) - Xopt_filtered).^2, 1) ./ Pd_f;
+    end
+
+    x_truth_coarse = x(1:Dx, (n_obs+1):n_obs:NTe+1);
+    PDF_signal = mean(sum(x_truth_coarse.^2, 1));
+    if PDF_signal <= eps
+        PDF_signal = 1;
+    end
+
+    mse_signal_methods = zeros(num_methods, num_obs);
+    for method_idx = 1:num_methods
+        mse_signal_methods(method_idx, :) = sum((Xf_methods{method_idx}(:, 2:end) - x_truth_coarse).^2, 1) ./ PDF_signal;
+    end
+    mse_signal_optimal = sum((Xopt_filtered - x_truth_coarse).^2, 1) ./ PDF_signal;
+
     mse_summary = struct('obs_indices', obs_indices, ...
-        'methodA', mse_A, 'methodB', mse_B, 'optimal_label', optimal_label, ...
-        'normalization', Pd_f);
+        'method_labels', {method_labels}, ...
+        'optimal_label', optimal_label, ...
+        'vs_optimal', mse_vs_opt_methods, ...
+        'signal', mse_signal_methods, ...
+        'signal_optimal', mse_signal_optimal, ...
+        'normalization', Pd_f, ...
+        'PDF_signal', PDF_signal);
+
+    mse_summary.methodA = mse_vs_opt_methods(1, :);
+    mse_summary.methodB = mse_vs_opt_methods(2, :);
+    mse_summary.methodC = mse_vs_opt_methods(3, :);
+    mse_summary.methodD = mse_vs_opt_methods(4, :);
+    mse_summary.MSE_signal_A = mse_signal_methods(1, :);
+    mse_summary.MSE_signal_B = mse_signal_methods(2, :);
+    mse_summary.MSE_signal_C = mse_signal_methods(3, :);
+    mse_summary.MSE_signal_D = mse_signal_methods(4, :);
+    mse_summary.MSE_signal_optimal = mse_signal_optimal;
 
     method_summaries = repmat(struct('label', '', 'inside_mass', [], ...
-        'inside_count', []), 3, 1);
-    method_summaries(1).label = method_labels{1};
-    method_summaries(1).inside_mass = measurement_data_A.inside_mass;
-    method_summaries(1).inside_count = measurement_data_A.inside_count;
-    method_summaries(2).label = method_labels{2};
-    method_summaries(2).inside_mass = measurement_data_B.inside_mass;
-    method_summaries(2).inside_count = measurement_data_B.inside_count;
-    method_summaries(3).label = optimal_label;
-    method_summaries(3).inside_mass = measurement_data_opt.inside_mass;
-    method_summaries(3).inside_count = measurement_data_opt.inside_count;
+        'inside_count', []), num_methods + 1, 1);
+    for method_idx = 1:num_methods
+        method_summaries(method_idx).label = method_labels{method_idx};
+        method_summaries(method_idx).inside_mass = measurement_data_methods(method_idx).inside_mass;
+        method_summaries(method_idx).inside_count = measurement_data_methods(method_idx).inside_count;
+    end
+    method_summaries(num_methods + 1).label = optimal_label;
+    method_summaries(num_methods + 1).inside_mass = measurement_data_opt.inside_mass;
+    method_summaries(num_methods + 1).inside_count = measurement_data_opt.inside_count;
 
     %% Save results to MAT file
     results.params = struct( ...
@@ -242,16 +258,16 @@ function sim_output = run_filters(varargin)
         'full_indices', full_indices, ...
         'fine_time_mesh', fine_time_mesh, ...
         'barrier_params', barrier_params, ...
+        'barrier_params_methods', {barrier_params_list}, ...
         'Dx', Dx, ...
         'N', N, ...
         'Dz', Dz, ...
         'fixed_observed_components', fixed_observed_components, ...
-        'posterior_root', posterior_root, ...
         'method_labels', {method_labels}, ...
         'optimal_label', optimal_label);
 
     results.truth = struct( ...
-        'x_coarse', x(1:Dx, (n_obs+1):n_obs:NTe+1), ...
+        'x_coarse', x_truth_coarse, ...
         'x0', x0);
 
     results.tv_summary = tv_summary;
@@ -264,7 +280,6 @@ function sim_output = run_filters(varargin)
 
     sim_output = struct( ...
         'results_file', results_file, ...
-        'posterior_root', posterior_root, ...
         'method_labels', {method_labels}, ...
         'num_observations', num_obs, ...
         'tv_summary', tv_summary, ...
@@ -290,24 +305,18 @@ function sim_output = run_filters(varargin)
         masses_local = subcube_masses_loop(stats_local.X_in, stats_local.w_in, S_local);
         inside_total_local = stats_local.inside_mass * masses_local;
 
-        switch method_id
-            case 1
-                measurement_data_A.inside_mass(obs_idx_local) = stats_local.inside_mass;
-                measurement_data_A.inside_count(obs_idx_local) = stats_local.inside_count;
-                measurement_data_A.subcube_masses{obs_idx_local} = masses_local;
-                measurement_data_A.inside_total_masses{obs_idx_local} = inside_total_local;
-            case 2
-                measurement_data_B.inside_mass(obs_idx_local) = stats_local.inside_mass;
-                measurement_data_B.inside_count(obs_idx_local) = stats_local.inside_count;
-                measurement_data_B.subcube_masses{obs_idx_local} = masses_local;
-                measurement_data_B.inside_total_masses{obs_idx_local} = inside_total_local;
-            case 3
-                measurement_data_opt.inside_mass(obs_idx_local) = stats_local.inside_mass;
-                measurement_data_opt.inside_count(obs_idx_local) = stats_local.inside_count;
-                measurement_data_opt.subcube_masses{obs_idx_local} = masses_local;
-                measurement_data_opt.inside_total_masses{obs_idx_local} = inside_total_local;
-            otherwise
-                error('Unsupported method identifier: %d', method_id);
+        if method_id >= 1 && method_id <= num_methods
+            measurement_data_methods(method_id).inside_mass(obs_idx_local) = stats_local.inside_mass;
+            measurement_data_methods(method_id).inside_count(obs_idx_local) = stats_local.inside_count;
+            measurement_data_methods(method_id).subcube_masses{obs_idx_local} = masses_local;
+            measurement_data_methods(method_id).inside_total_masses{obs_idx_local} = inside_total_local;
+        elseif method_id == num_methods + 1
+            measurement_data_opt.inside_mass(obs_idx_local) = stats_local.inside_mass;
+            measurement_data_opt.inside_count(obs_idx_local) = stats_local.inside_count;
+            measurement_data_opt.subcube_masses{obs_idx_local} = masses_local;
+            measurement_data_opt.inside_total_masses{obs_idx_local} = inside_total_local;
+        else
+            error('Unsupported method identifier: %d', method_id);
         end
     end
 end
