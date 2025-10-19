@@ -11,23 +11,22 @@ function varargout = sir_barrier(F,sx,sz,h,NT,n_obs,z,H,X0,ness_thr,barrier_para
 % n_obs : observations are collected every n_obs discrete time units
 % z : observations
 % H : observation matrix
-% X0 : initial particles 
+% X0 : initial particles
 % ness_thr : resampling threshold
-% 
+%
 % Xf : filtered states
 % Xp : predicted states
 %
 %
 
-% recovers the no. of particles (N), 
+% recovers the no. of particles (N),
 [Dx, N] = size(X0);
 
 if nargin < 12 || isempty(storage_opts)
     storage_opts = struct();
 end
 
-save_to_disk = isfield(storage_opts, 'save_to_disk') && storage_opts.save_to_disk;
-
+% Optional measurement handler invoked after each assimilation step.
 if isfield(storage_opts, 'measurement_handler') && ~isempty(storage_opts.measurement_handler)
     if ~isa(storage_opts.measurement_handler, 'function_handle')
         error('storage_opts.measurement_handler must be a function handle.');
@@ -35,45 +34,6 @@ if isfield(storage_opts, 'measurement_handler') && ~isempty(storage_opts.measure
     measurement_handler = storage_opts.measurement_handler;
 else
     measurement_handler = [];
-end
-
-if isfield(storage_opts, 'store_histories') && ~save_to_disk
-    store_histories = logical(storage_opts.store_histories);
-else
-    store_histories = ~save_to_disk;  % preserve legacy behaviour when not saving to disk
-end
-
-if save_to_disk
-    if ~isfield(storage_opts, 'method_label') || isempty(storage_opts.method_label)
-        error('When save_to_disk=true, storage_opts.method_label must be provided.');
-    end
-    method_label = storage_opts.method_label;
-
-    if isfield(storage_opts, 'output_dir') && ~isempty(storage_opts.output_dir)
-        output_dir = storage_opts.output_dir;
-    else
-        output_dir = fullfile(pwd, 'posterior_data');
-    end
-
-    if ~exist(output_dir, 'dir')
-        mkdir(output_dir);
-    end
-
-    method_dir = fullfile(output_dir, method_label);
-    if exist(method_dir, 'dir')
-        existing_files = dir(fullfile(method_dir, '*.mat'));
-        if ~isempty(existing_files)
-            delete(fullfile(method_dir, '*.mat'));
-        end
-    else
-        mkdir(method_dir);
-    end
-
-    summary_file = fullfile(method_dir, 'summary.mat');
-else
-    method_label = '';
-    method_dir = '';
-    summary_file = '';
 end
 
 nt=NT/n_obs; % choose NT and obs such that obs| NT
@@ -105,13 +65,8 @@ k=barrier_params.k;
 %
 resampling_counter=0;
 
-if save_to_disk || ~store_histories
-    W_history = [];
-    Particle_history = [];
-else
-    W_history   = cell(nt, 1);   % allocate once
-    Particle_history=zeros([Dx,N,nt]);
-end
+W_history = [];
+Particle_history = [];
 inside_count=zeros(nt,1);
 % centers are on the obs space
 prev_center=H*mean(X0,2);  % Initialize center of 1st hypercube in OBS from initial particle positions.
@@ -174,18 +129,6 @@ for obs_idx=1:nt
             measurement_handler(obs_idx, Xnew, weight);
        end
 
-       if save_to_disk
-            obs_data = struct();
-            obs_data.method_label = method_label;
-            obs_data.observation_index = obs_idx;
-            obs_data.particles = Xnew;
-            obs_data.weights = weight;
-            obs_file = fullfile(method_dir, sprintf('obs_%04d.mat', obs_idx));
-            save(obs_file, '-struct', 'obs_data', '-v7.3');
-       elseif store_histories
-            Particle_history(:,:,obs_idx)=Xnew;
-            W_history{obs_idx} = weight;     %  % Save weights before resampling
-       end
        Xf(:,obs_idx+1) = Xnew*weight';  %%% is it the correct place ?  (obs_idx+1)
        % fprintf("finer_idx  % d, Xp stored at   %d \n", finer_idx_counter,(obs_idx-1)*n_obs+inner_idx+1);     
        % Resampling
@@ -205,19 +148,6 @@ for obs_idx=1:nt
     prev_center=C(:,2);  % in the next stage, prev_stage should be independent of SDE samples
     Xold=Xnew;
 end % time (n)
-
-if save_to_disk
-    summary = struct();
-    summary.method_label = method_label;
-    summary.output_dir = method_dir;
-    summary.resampling_counter = resampling_counter;
-    summary.inside_count = inside_count;
-    summary.n_obs = n_obs;
-    summary.NT = NT;
-    summary.Dx = Dx;
-    summary.N = N;
-    save(summary_file, '-struct', 'summary');
-end
 
 if nargout > 0
     base_outputs = {Xf, Xp, resampling_counter, W_history, Particle_history, inside_count};

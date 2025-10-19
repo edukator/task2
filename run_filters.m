@@ -2,28 +2,17 @@ function sim_output = run_filters(varargin)
 %RUN_FILTERS Run the filtering experiment and record posterior statistics.
 %   SIM_OUTPUT = RUN_FILTERS(Name,Value,...) executes one instance of the
 %   filtering experiment, saving the signal, observations and posterior
-%   summary statistics to disk. Particle ensembles may optionally be stored
-%   for each observation, but by default only the information required to
-%   plot total-variation distances is kept. In addition to the two barrier
-%   methods, an optimal SIR particle filter with a significantly larger
-%   ensemble is executed to provide reference posterior mass distributions
-%   and normalized filtered-state MSE curves.
+%   summary statistics to disk. In addition to the two barrier methods, an
+%   optimal SIR particle filter with a significantly larger ensemble is
+%   executed to provide reference posterior mass distributions and
+%   normalized filtered-state MSE curves.
 %
 %   Name/value pairs:
-%       'output_dir'       Base directory for result files (default pwd).
-%       'posterior_root'   Directory for posterior data (default
-%                          fullfile(output_dir,'posterior_data')).
-%       'results_file'     MAT file used to store summary results (default
-%                          'filter_results.mat' inside output_dir).
-%       'method_labels'    1x2 cell array with labels for the two filters
-%                          (default {'MethodA','MethodB'}).
-%       'overwrite_output' Logical flag indicating whether an existing
-%                          posterior directory should be cleared before the
-%                          simulation (default true).
-%       'save_particle_snapshots'
-%                         Logical flag controlling whether individual
-%                         posterior ensembles are saved to disk (default
-%                         false).
+%       'output_dir'     Base directory for result files (default pwd).
+%       'results_file'   MAT file used to store summary results (default
+%                        'filter_results.mat' inside output_dir).
+%       'method_labels'  1x2 cell array with labels for the two filters
+%                        (default {'MethodA','MethodB'}).
 %
 %   Example
 %       run_filters;                 % run with defaults
@@ -39,11 +28,8 @@ function sim_output = run_filters(varargin)
     isLabelCell = @(c) iscell(c) && numel(c) == 2 && all(cellfun(isStringy, c));
 
     addParameter(parser, 'output_dir', pwd, isStringy); % sure directory name is string string
-    addParameter(parser, 'posterior_root', '', isStringy);% "  "
     addParameter(parser, 'results_file', 'filter_results.mat', isStringy);% sure filename is a string
     addParameter(parser, 'method_labels', {'MethodA', 'MethodB'}, isLabelCell);
-    addParameter(parser, 'overwrite_output', true, @(x) islogical(x) && isscalar(x));
-    addParameter(parser, 'save_particle_snapshots', false, @(x) islogical(x) && isscalar(x));
 
     parse(parser, varargin{:});
     opts = parser.Results;
@@ -51,25 +37,6 @@ function sim_output = run_filters(varargin)
     output_dir = char(opts.output_dir);
     if ~isfolder(output_dir)
         mkdir(output_dir);
-    end
-
-    save_particle_snapshots = logical(opts.save_particle_snapshots);
-
-    if save_particle_snapshots
-        if isempty(opts.posterior_root)
-            posterior_root = fullfile(output_dir, 'posterior_data');
-        else
-            posterior_root = char(opts.posterior_root);
-        end
-
-        if opts.overwrite_output && isfolder(posterior_root)
-            rmdir(posterior_root, 's');
-        end
-        if ~isfolder(posterior_root)
-            mkdir(posterior_root);
-        end
-    else
-        posterior_root = '';
     end
 
     results_file = char(opts.results_file);
@@ -167,19 +134,16 @@ function sim_output = run_filters(varargin)
     record_B = @(obs_idx, particles, weights) record_measurement(obs_idx, particles, weights, 2);
     record_opt = @(obs_idx, particles, weights) record_measurement(obs_idx, particles, weights, 3);
 
-    optsA = struct('save_to_disk', save_particle_snapshots, 'method_label', method_labels{1}, ...
-        'output_dir', posterior_root, 'measurement_handler', record_A, 'store_histories', false);
+    optsA = struct('measurement_handler', record_A);
     [Xf_A] = sir_barrier(F, sx, sz, he, NTe, n_obs, ze_sparse, H, X0A, ness_thr, barrier_params_A, optsA);
 
-    optsB = struct('save_to_disk', save_particle_snapshots, 'method_label', method_labels{2}, ...
-        'output_dir', posterior_root, 'measurement_handler', record_B, 'store_histories', false);
+    optsB = struct('measurement_handler', record_B);
     [Xf_B] = sir_barrier(F, sx, sz, he, NTe, n_obs, ze_sparse, H, X0B, ness_thr, barrier_params_B, optsB);
 
     optimal_particle_multiplier = 20;
     N_opt = max(N, ceil(optimal_particle_multiplier * N));
     X0_opt = x0 + sz*randn([Dx N_opt]);
-    opts_opt = struct('save_to_disk', save_particle_snapshots, 'method_label', optimal_label, ...
-        'output_dir', posterior_root, 'measurement_handler', record_opt, 'store_histories', false);
+    opts_opt = struct('measurement_handler', record_opt);
     [Xf_opt] = sir(F, sx, sz, he, NTe, n_obs, ze_sparse, H, X0_opt, ness_thr, opts_opt);
 
     obs_indices = 1:num_obs;
@@ -255,7 +219,6 @@ function sim_output = run_filters(varargin)
         'N', N, ...
         'Dz', Dz, ...
         'fixed_observed_components', fixed_observed_components, ...
-        'posterior_root', posterior_root, ...
         'method_labels', {method_labels}, ...
         'optimal_label', optimal_label);
 
@@ -273,7 +236,6 @@ function sim_output = run_filters(varargin)
 
     sim_output = struct( ...
         'results_file', results_file, ...
-        'posterior_root', posterior_root, ...
         'method_labels', {method_labels}, ...
         'num_observations', num_obs, ...
         'tv_summary', tv_summary, ...

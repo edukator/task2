@@ -117,10 +117,7 @@ function run_result = execute_single_run(run_idx, run_dir)
     end
 
     results_file = fullfile(run_dir, 'filter_results.mat');
-    posterior_root = fullfile(run_dir, 'posterior_data');
-
-    sim_output = run_filters('output_dir', run_dir, 'results_file', results_file, ...
-        'posterior_root', posterior_root, 'overwrite_output', true);
+    sim_output = run_filters('output_dir', run_dir, 'results_file', results_file);
 
     obs_indices = sim_output.tv_summary.obs_indices;
     tv_inside = sim_output.tv_summary.inside_only;
