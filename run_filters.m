@@ -164,10 +164,6 @@ function sim_output = run_filters(varargin)
     [Xf_opt] = sir(F, sx, sz, he, NTe, n_obs, ze_sparse, H, X0_opt, ness_thr, opts_opt);
 
     obs_indices = 1:num_obs;
-    method_pairs = nchoosek(1:num_methods, 2);
-    num_pairs = size(method_pairs, 1);
-    pairwise_distances = zeros(num_pairs, num_obs);
-    pairwise_labels = cell(num_pairs, 1);
     vs_optimal_distances = zeros(num_methods, num_obs);
 
     for obs_idx = 1:num_obs
@@ -177,32 +173,16 @@ function sim_output = run_filters(varargin)
             method_masses{method_idx} = measurement_data_methods(method_idx).inside_total_masses{obs_idx};
         end
 
-        for pair_idx = 1:num_pairs
-            i = method_pairs(pair_idx, 1);
-            j = method_pairs(pair_idx, 2);
-            pairwise_distances(pair_idx, obs_idx) = 0.5 * sum(abs(method_masses{i} - method_masses{j}));
-        end
-
         for method_idx = 1:num_methods
             vs_optimal_distances(method_idx, obs_idx) = 0.5 * sum(abs(method_masses{method_idx} - masses_opt));
         end
     end
 
-    for pair_idx = 1:num_pairs
-        labels = {method_labels{method_pairs(pair_idx, 1)}, method_labels{method_pairs(pair_idx, 2)}};
-        pairwise_labels{pair_idx} = sprintf('%s vs %s', labels{1}, labels{2});
-    end
-
     tv_summary = struct('obs_indices', obs_indices, ...
         'method_labels', {method_labels}, ...
-        'pairwise_method_indices', method_pairs, ...
-        'pairwise_labels', {pairwise_labels}, ...
-        'pairwise_distances', pairwise_distances, ...
         'vs_optimal_distances', vs_optimal_distances, ...
         'optimal_label', optimal_label);
 
-    tv_summary.inside_only = pairwise_distances(1, :);
-    tv_summary.inside_AB = pairwise_distances(1, :);
     tv_summary.inside_A_vs_optimal = vs_optimal_distances(1, :);
     tv_summary.inside_B_vs_optimal = vs_optimal_distances(2, :);
     tv_summary.inside_C_vs_optimal = vs_optimal_distances(3, :);

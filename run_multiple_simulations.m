@@ -120,7 +120,11 @@ function run_result = execute_single_run(run_idx, run_dir)
     sim_output = run_filters('output_dir', run_dir, 'results_file', results_file);
 
     obs_indices = sim_output.tv_summary.obs_indices;
-    tv_inside = sim_output.tv_summary.inside_only;
+    vs_optimal_distances = sim_output.tv_summary.vs_optimal_distances;
+    if isempty(vs_optimal_distances)
+        error('tv_summary.vs_optimal_distances is empty for run %d.', run_idx);
+    end
+    tv_inside = vs_optimal_distances(1, :);
 
     run_result = struct('run_idx', run_idx, 'run_dir', run_dir, ...
         'obs_indices', obs_indices, 'tv_inside', tv_inside);

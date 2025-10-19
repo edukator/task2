@@ -51,9 +51,7 @@ function stats = replot_from_filter_results(base_output_dir)
     mse_signal_B_runs = [];
 
     % Storage for the extended multi-method layout
-    tv_pair_runs = [];
     tv_vs_opt_runs = [];
-    pairwise_labels = {};
     method_labels = {};
     optimal_label = '';
     mse_vs_opt_runs = [];
@@ -97,8 +95,7 @@ function stats = replot_from_filter_results(base_output_dir)
             end
         end
 
-        current_new_tv = isfield(tv_summary, 'pairwise_distances') && ...
-            isfield(tv_summary, 'method_labels') && ...
+        current_new_tv = isfield(tv_summary, 'method_labels') && ...
             isfield(tv_summary, 'vs_optimal_distances');
         if isempty(using_new_tv)
             using_new_tv = current_new_tv;
@@ -116,14 +113,6 @@ function stats = replot_from_filter_results(base_output_dir)
         end
 
         if using_new_tv
-            current_pairwise = tv_summary.pairwise_distances;
-            if size(current_pairwise, 2) ~= num_obs
-                if size(current_pairwise, 1) == num_obs
-                    current_pairwise = current_pairwise.';
-                else
-                    error('Unexpected pairwise_distances dimensions in %s.', results_file);
-                end
-            end
             current_vs_opt = tv_summary.vs_optimal_distances;
             if size(current_vs_opt, 2) ~= num_obs
                 if size(current_vs_opt, 1) == num_obs
@@ -133,24 +122,23 @@ function stats = replot_from_filter_results(base_output_dir)
                 end
             end
 
-            if isempty(tv_pair_runs)
-                pairwise_labels = tv_summary.pairwise_labels(:);
+            if isempty(tv_vs_opt_runs)
                 method_labels = tv_summary.method_labels(:).';
                 optimal_label = tv_summary.optimal_label;
                 num_methods = numel(method_labels);
-                num_pairs = size(current_pairwise, 1);
-                tv_pair_runs = zeros(num_runs, num_pairs, num_obs);
+                if size(current_vs_opt, 1) ~= num_methods
+                    error('Mismatch between method labels and vs_optimal_distances in %s.', results_file);
+                end
                 tv_vs_opt_runs = zeros(num_runs, num_methods, num_obs);
             else
                 if numel(tv_summary.method_labels) ~= num_methods
                     error('Method label count changed between runs.');
                 end
-                if size(current_pairwise, 1) ~= size(tv_pair_runs, 2)
-                    error('Pairwise distance count changed between runs.');
+                if size(current_vs_opt, 1) ~= size(tv_vs_opt_runs, 2)
+                    error('Method distance count changed between runs.');
                 end
             end
 
-            tv_pair_runs(run_idx, :, :) = current_pairwise;
             tv_vs_opt_runs(run_idx, :, :) = current_vs_opt;
         else
             required_tv_fields = {'inside_AB', 'inside_A_vs_optimal', 'inside_B_vs_optimal'};
@@ -229,52 +217,47 @@ function stats = replot_from_filter_results(base_output_dir)
     end
 
     if using_new_tv
-        num_pairs = size(tv_pair_runs, 2);
         num_methods = size(tv_vs_opt_runs, 2);
 
-        tv_AB_runs = reshape(tv_pair_runs(:, 1, :), num_runs, num_obs);
-        tv_A_opt_runs = reshape(tv_vs_opt_runs(:, 1, :), num_runs, num_obs);
-        tv_B_opt_runs = reshape(tv_vs_opt_runs(:, 2, :), num_runs, num_obs);
-
-        mean_tv_pairwise = squeeze(mean(tv_pair_runs, 1));
         mean_tv_vs_opt = squeeze(mean(tv_vs_opt_runs, 1));
-        mean_tv_AB = mean(tv_AB_runs, 1);
-        mean_tv_A_opt = mean(tv_A_opt_runs, 1);
-        mean_tv_B_opt = mean(tv_B_opt_runs, 1);
+        if num_methods == 1
+            mean_tv_vs_opt = reshape(mean_tv_vs_opt, 1, num_obs);
+        end
 
         mean_mse_vs_opt = squeeze(mean(mse_vs_opt_runs, 1));
         mean_mse_signal_methods = squeeze(mean(mse_signal_runs, 1));
         mean_mse_signal_opt = mean(mse_signal_opt_runs, 1);
 
         mse_A_runs = reshape(mse_vs_opt_runs(:, 1, :), num_runs, num_obs);
-        mse_B_runs = reshape(mse_vs_opt_runs(:, 2, :), num_runs, num_obs);
         mse_signal_A_runs = reshape(mse_signal_runs(:, 1, :), num_runs, num_obs);
-        mse_signal_B_runs = reshape(mse_signal_runs(:, 2, :), num_runs, num_obs);
         mean_mse_A = mean(mse_A_runs, 1);
-        mean_mse_B = mean(mse_B_runs, 1);
         mean_mse_signal_A = mean(mse_signal_A_runs, 1);
-        mean_mse_signal_B = mean(mse_signal_B_runs, 1);
 
-        colors_runs = lines(num_runs);
+        tv_A_opt_runs = reshape(tv_vs_opt_runs(:, 1, :), num_runs, num_obs);
+        mean_tv_A_opt = mean(tv_A_opt_runs, 1);
+
+        if num_methods >= 2
+            mse_B_runs = reshape(mse_vs_opt_runs(:, 2, :), num_runs, num_obs);
+            mse_signal_B_runs = reshape(mse_signal_runs(:, 2, :), num_runs, num_obs);
+            mean_mse_B = mean(mse_B_runs, 1);
+            mean_mse_signal_B = mean(mse_signal_B_runs, 1);
+
+            tv_B_opt_runs = reshape(tv_vs_opt_runs(:, 2, :), num_runs, num_obs);
+            mean_tv_B_opt = mean(tv_B_opt_runs, 1);
+        else
+            mse_B_runs = [];
+            mse_signal_B_runs = [];
+            mean_mse_B = [];
+            mean_mse_signal_B = [];
+            tv_B_opt_runs = [];
+            mean_tv_B_opt = [];
+        end
+
         method_colors = lines(num_methods);
-        pair_colors = lines(max(num_pairs, 1));
         line_styles = {'-', '--', ':', '-.'};
         if num_methods > numel(line_styles)
             line_styles = repmat(line_styles, 1, ceil(num_methods / numel(line_styles)));
         end
-
-        fig_runs_ab = figure('Name', 'Posterior TV distance trajectories (Method A vs B)');
-        hold on;
-        for run_idx = 1:num_runs
-            plot(obs_indices, tv_AB_runs(run_idx, :), 'Color', colors_runs(run_idx, :), ...
-                'LineWidth', 1.0, 'DisplayName', sprintf('Run %d', run_idx));
-        end
-        hold off;
-        xlabel('Observation index');
-        ylabel('TV distance (A vs B)');
-        title('TV distances between Method A and Method B across simulations');
-        legend('Location', 'best');
-        grid on;
 
         fig_runs_opt = figure('Name', 'Posterior TV distance trajectories vs optimal');
         hold on;
@@ -297,19 +280,6 @@ function stats = replot_from_filter_results(base_output_dir)
         ylabel('TV distance vs optimal');
         title('TV distances between SIR optimal filter and barrier methods');
         legend('Location', 'bestoutside');
-        grid on;
-
-        fig_mean_tv = figure('Name', 'Average posterior TV distances (pairwise)');
-        hold on;
-        for pair_idx = 1:num_pairs
-            plot(obs_indices, mean_tv_pairwise(pair_idx, :), 'LineWidth', 1.5, ...
-                'Color', pair_colors(pair_idx, :), 'DisplayName', pairwise_labels{pair_idx});
-        end
-        hold off;
-        xlabel('Observation index');
-        ylabel('TV distance');
-        title('Average posterior TV distances across simulations');
-        legend('Location', 'best');
         grid on;
 
         fig_mean_vs_opt = figure('Name', 'Average posterior TV distances vs optimal');
@@ -357,18 +327,16 @@ function stats = replot_from_filter_results(base_output_dir)
         grid on;
 
         stats_file = fullfile(base_output_dir, 'tv_distance_statistics.mat');
-        save(stats_file, 'obs_indices', 'pairwise_labels', 'method_labels', 'optimal_label', ...
-            'tv_pair_runs', 'tv_vs_opt_runs', 'tv_AB_runs', 'tv_A_opt_runs', 'tv_B_opt_runs', ...
-            'mean_tv_pairwise', 'mean_tv_vs_opt', 'mean_tv_AB', 'mean_tv_A_opt', 'mean_tv_B_opt', ...
+        save(stats_file, 'obs_indices', 'method_labels', 'optimal_label', ...
+            'tv_vs_opt_runs', 'tv_A_opt_runs', 'tv_B_opt_runs', 'mean_tv_vs_opt', ...
+            'mean_tv_A_opt', 'mean_tv_B_opt', ...
             'mse_vs_opt_runs', 'mse_signal_runs', 'mse_signal_opt_runs', ...
             'mse_A_runs', 'mse_B_runs', 'mse_signal_A_runs', 'mse_signal_B_runs', ...
             'mean_mse_vs_opt', 'mean_mse_signal_methods', 'mean_mse_signal_opt', ...
             'mean_mse_A', 'mean_mse_B', 'mean_mse_signal_A', 'mean_mse_signal_B');
         fprintf('Saved aggregated statistics to %s\n', stats_file);
 
-        saveas(fig_runs_ab, fullfile(base_output_dir, 'tv_distance_runs_AB.fig'));
         saveas(fig_runs_opt, fullfile(base_output_dir, 'tv_distance_runs_vs_optimal.fig'));
-        saveas(fig_mean_tv, fullfile(base_output_dir, 'tv_distance_average.fig'));
         saveas(fig_mean_vs_opt, fullfile(base_output_dir, 'tv_distance_average_vs_optimal.fig'));
         saveas(fig_mean_mse, fullfile(base_output_dir, 'filtered_mse_average.fig'));
         saveas(fig_mean_signal_mse, fullfile(base_output_dir, 'signal_mse_average.fig'));
@@ -376,17 +344,12 @@ function stats = replot_from_filter_results(base_output_dir)
         if nargout > 0
             stats = struct(...
                 'obs_indices', obs_indices, ...
-                'pairwise_labels', {pairwise_labels}, ...
                 'method_labels', {method_labels}, ...
                 'optimal_label', optimal_label, ...
-                'tv_pair_runs', tv_pair_runs, ...
                 'tv_vs_opt_runs', tv_vs_opt_runs, ...
-                'tv_AB_runs', tv_AB_runs, ...
                 'tv_A_opt_runs', tv_A_opt_runs, ...
                 'tv_B_opt_runs', tv_B_opt_runs, ...
-                'mean_tv_pairwise', mean_tv_pairwise, ...
                 'mean_tv_vs_opt', mean_tv_vs_opt, ...
-                'mean_tv_AB', mean_tv_AB, ...
                 'mean_tv_A_opt', mean_tv_A_opt, ...
                 'mean_tv_B_opt', mean_tv_B_opt, ...
                 'mse_vs_opt_runs', mse_vs_opt_runs, ...
