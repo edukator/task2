@@ -137,11 +137,9 @@ function sim_output = run_filters(varargin)
         partitions{obs_idx} = hypercube_partition_full(cent, r, r_sub);% holds all info related to geometry of hypercubes
     end
 
-    measurement_data_methods = repmat(struct(), num_methods, 1);
-    for method_idx = 1:num_methods
-        measurement_data_methods(method_idx) = initialize_measurement_storage(num_obs);% insidemass,insidecount,subcubemass,totalmass
-    end
-    measurement_data_opt = initialize_measurement_storage(num_obs);
+    template_measurement_data = initialize_measurement_storage(num_obs);
+    measurement_data_methods = repmat(template_measurement_data, num_methods, 1);
+    measurement_data_opt = template_measurement_data;
 
     record_method = cell(num_methods, 1);
     for method_idx = 1:num_methods
